@@ -2,10 +2,35 @@ import streamlit as st
 from web3 import Web3
 import json
 import os
-from solcx import compile_standard, install_solc
+from solcx import compile_standard, install_solc, get_installed_solc_versions, get_installable_solc_versions, set_solc_version
+from packaging.version import Version
 
-# Instalar a versão específica do compilador Solidity
-install_solc('0.8.26')
+# Função para garantir que a versão necessária do solc está instalada
+def ensure_solc_installed(version='0.8.26'):
+    installed_versions = get_installed_solc_versions()
+    installed_versions_str = [str(ver) for ver in installed_versions]
+    
+    if version not in installed_versions_str:
+        installable_versions = get_installable_solc_versions()
+        if version in installable_versions:
+            st.info(f"Instalando a versão {version} do solc...")
+            install_solc(version)
+            st.success(f"Versão {version} do solc instalada com sucesso.")
+        else:
+            available_version = max(installable_versions)
+            st.warning(f"A versão {version} do solc não está disponível. Instalando a versão {available_version} em vez disso.")
+            install_solc(available_version)
+            set_solc_version(available_version)
+            st.success(f"Versão {available_version} do solc instalada com sucesso.")
+    else:
+        set_solc_version(version)
+
+# Garantir que a versão específica do compilador Solidity está instalada
+try:
+    ensure_solc_installed('0.8.26')
+except Exception as e:
+    st.error(f"Erro ao garantir a instalação do solc: {e}")
+    raise
 
 # Configurar a conexão com o nó local do Ganache
 w3 = Web3(Web3.HTTPProvider('http://127.0.0.1:8545'))
@@ -37,8 +62,8 @@ def compile_contract(files):
         st.error(f"Compilação falhou. Detalhes: {compiled_sol}")
         raise ValueError("Compilação falhou: Nenhum contrato compilado")
 
-    # Depurar: mostrar contratos compilados
-    st.write("Contratos compilados:", json.dumps(compiled_sol['contracts'], indent=2))
+    # Salvar contratos compilados no estado da sessão
+    st.session_state['compiled_contracts'] = compiled_sol['contracts']
 
     # Procurar pelo contrato concreto a ser implantado
     for file_name, contracts in compiled_sol['contracts'].items():
@@ -98,6 +123,12 @@ if uploaded_files:
             except Exception as e:
                 st.error(f"Erro ao compilar e implantar o contrato: {e}")
                 st.error(f"Detalhes: {str(e)}")
+
+# Exibir contratos compilados salvos no estado da sessão
+compiled_contracts = st.session_state.get('compiled_contracts', None)
+if compiled_contracts:
+    with st.expander("Contratos compilados"):
+        st.json(compiled_contracts)
 
 # Interação com o contrato implantado
 contract_address = st.session_state.get('contract_address', None)
